@@ -21,6 +21,7 @@ jobs:
 
       - name: Run sync script
         run: python app.py
+        working-directory: ./tools/
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
