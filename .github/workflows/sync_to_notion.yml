@@ -25,4 +25,6 @@ jobs:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          GITHUB_TOKEN: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
+          GITHUB_REPO: "ju-ki/ai-travel-planner"
           ISSUE_CONTEXT: ${{ toJson(github.event.issue) }}

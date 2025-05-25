@@ -1,75 +1,95 @@
 import os
 import json
 import requests
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
+NOTION_VERSION = "2022-06-28"
+NOTION_URL = "https://api.notion.com/v1"
 
 def get_env_var(name: str) -> str:
-    """環境変数を取得し、なければ例外を投げる"""
     value = os.environ.get(name)
-    if value is None:
-        raise EnvironmentError(f"Environment variable '{name}' is not set.")
+    if not value:
+        raise EnvironmentError(f"Missing environment variable: {name}")
     return value
 
+notion_token = get_env_var("NOTION_API_KEY")
+database_id = get_env_var("NOTION_DATABASE_ID")
+project_id = get_env_var("PROJECT_ID")
+github_token = get_env_var("GITHUB_TOKEN")
+github_repo = get_env_var("GITHUB_REPO")
 
-def build_payload(issue: Dict[str, Any], database_id: str, project_id: str) -> Dict[str, Any]:
-    """Notion API に送信するための payload を構築する"""
+headers_notion = {
+    "Authorization": f"Bearer {notion_token}",
+    "Notion-Version": NOTION_VERSION,
+    "Content-Type": "application/json"
+}
+
+def search_notion_issue(number: int) -> Optional[str]:
+    """GitHub番号でNotion内のページを検索し、存在すればページIDを返す"""
+    query_url = f"{NOTION_URL}/databases/{database_id}/query"
+    payload = {
+        "filter": {
+            "property": "Github Number",
+            "number": {"equals": number}
+        }
+    }
+    res = requests.post(query_url, headers=headers_notion, json=payload)
+    if res.ok:
+        results = res.json().get("results", [])
+        if results:
+            return results[0]["id"]
+    return None
+
+def build_payload(issue: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "parent": {
-            "type": "database_id",
-            "database_id": database_id
-        },
+        "parent": {"database_id": database_id},
         "properties": {
-            "Name": {
-                "title": [{"text": {"content": issue.get("title", "Untitled Issue")}}]
-            },
-            "Github Number": {
-                "number": issue.get("number", 0)
-            },
-            "URL": {
-                "url": issue.get("html_url", "")
-            },
-            "Status": {
-                "status": {"name": "Closed" if issue.get("state") == "closed" else "Open"}
-            },
-            "Multi-select": {
-                "relation": [
-                    {"id": project_id}
-                ]
-            }
+            "Name": {"title": [{"text": {"content": issue["title"]}}]},
+            "Github Number": {"number": issue["number"]},
+            "URL": {"url": issue["html_url"]},
+            "Status": {"status": {"name": "Closed" if issue["state"] == "closed" else "Open"}},
+            "Multi-select": {"relation": [{"id": project_id}]}
         }
     }
 
+def create_page(issue: Dict[str, Any]):
+    payload = build_payload(issue)
+    res = requests.post(f"{NOTION_URL}/pages", headers=headers_notion, json=payload)
+    print(f"[CREATE] Issue #{issue['number']} → {res.status_code}")
 
-def sync_issue_to_notion():
-    """GitHub Issue を Notion に同期する"""
-    try:
-        notion_token = get_env_var("NOTION_API_KEY")
-        database_id = get_env_var("NOTION_DATABASE_ID")
-        project_id = get_env_var("PROJECT_ID")
+def update_page(page_id: str, issue: Dict[str, Any]):
+    payload = {"properties": build_payload(issue)["properties"]}
+    res = requests.patch(f"{NOTION_URL}/pages/{page_id}", headers=headers_notion, json=payload)
+    print(f"[UPDATE] Issue #{issue['number']} → {res.status_code}")
 
-        issue_json = get_env_var("ISSUE_CONTEXT")
-        issue = json.loads(issue_json)
+def sync_issue(issue: Dict[str, Any]):
+    page_id = search_notion_issue(issue["number"])
+    if page_id:
+        update_page(page_id, issue)
+    else:
+        create_page(issue)
 
-        headers = {
-            "Authorization": f"Bearer {notion_token}",
-            "Notion-Version": "2022-06-28",
-            "Content-Type": "application/json"
-        }
+def bulk_sync_all_issues():
+    headers_github = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github+json"
+    }
+    issues_url = f"https://api.github.com/repos/{github_repo}/issues?state=all"
+    res = requests.get(issues_url, headers=headers_github)
+    if not res.ok:
+        print("Failed to fetch GitHub issues:", res.text)
+        return
 
-        payload = build_payload(issue, database_id, project_id)
-        response = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
-
-        print("Status Code:", response.status_code)
-        if response.ok:
-            print("✅ Issue successfully synced to Notion.")
-        else:
-            print("❌ Failed to sync issue.")
-            print("Response:", response.text)
-
-    except Exception as e:
-        print("❌ An error occurred:", str(e))
-
+    issues = res.json()
+    for issue in issues:
+        if "pull_request" in issue:
+            continue  # Skip PRs
+        sync_issue(issue)
 
 if __name__ == "__main__":
-    sync_issue_to_notion()
+    issue_context = os.environ.get("ISSUE_CONTEXT")
+    if issue_context:
+        issue = json.loads(issue_context)
+        sync_issue(issue)
+    else:
+        bulk_sync_all_issues()
