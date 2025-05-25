@@ -88,8 +88,8 @@ def bulk_sync_all_issues():
 
 if __name__ == "__main__":
     issue_context = os.environ.get("ISSUE_CONTEXT")
-    if issue_context:
-        issue = json.loads(issue_context)
-        sync_issue(issue)
-    else:
-        bulk_sync_all_issues()
+    bulk_sync_all_issues()
+    # if issue_context:
+    #     issue = json.loads(issue_context)
+    #     sync_issue(issue)
+    # else:
