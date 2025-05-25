@@ -24,4 +24,5 @@ jobs:
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
           ISSUE_CONTEXT: ${{ toJson(github.event.issue) }}

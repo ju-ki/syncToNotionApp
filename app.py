@@ -34,7 +34,7 @@ def sync_issue_to_notion(issue=None):
             },
             "Multi-select": {
                 "relation": [
-                    { "id": "1fe08d37-6242-808b-9f86-eb409c128c05" }
+                    { "id": project_id }
                 ]
             }
 
