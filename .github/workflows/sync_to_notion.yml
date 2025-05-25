@@ -20,7 +20,7 @@ jobs:
         run: pip install requests python-dotenv
 
       - name: Run sync script
-        run: python sync_to_notion.py
+        run: python app.py
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
