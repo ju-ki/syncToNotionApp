@@ -6,8 +6,6 @@ notion_token = os.environ.get("NOTION_API_KEY")
 database_id = os.environ.get("NOTION_DATABASE_ID")
 project_id = os.environ.get("PROJECT_ID")
 
-notion_token = "ntn_r23692170905aJgPtRZWE63eZOg8ifVuTFI9cOLSozy58Q"
-database_id = "1fe08d3762428035bf96ec8a5714167f"
 issue_json = os.environ["ISSUE_CONTEXT"]
 issue = json.loads(issue_json)
 
@@ -47,5 +45,6 @@ def sync_issue_to_notion(issue=None):
 
     res = requests.post(url, headers=headers, json=data)
     print("Status Code:", res.status_code)
+    print("Response:", res.text)
 
 sync_issue_to_notion(issue)
