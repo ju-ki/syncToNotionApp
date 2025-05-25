@@ -33,6 +33,8 @@ def sync_issue_to_notion(issue):
         }
     }
 
-    requests.post(url, headers=headers, json=data)
+    res = requests.post(url, headers=headers, json=data)
+    print("Status Code:", res.status_code)
+    print("Response:", res.text)
 
 sync_issue_to_notion(issue)
