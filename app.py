@@ -1,11 +1,12 @@
 import os
 import json
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 NOTION_VERSION = "2022-06-28"
 NOTION_URL = "https://api.notion.com/v1"
 
+# 環境変数の読み込み
 def get_env_var(name: str) -> str:
     value = os.environ.get(name)
     if not value:
@@ -24,22 +25,62 @@ headers_notion = {
     "Content-Type": "application/json"
 }
 
-def search_notion_issue(number: int) -> Optional[str]:
-    """GitHub番号でNotion内のページを検索し、存在すればページIDを返す"""
+# すでにNotionにあるIssue番号をすべて取得
+def get_existing_github_numbers() -> List[int]:
     query_url = f"{NOTION_URL}/databases/{database_id}/query"
-    payload = {
-        "filter": {
-            "property": "Github Number",
-            "number": {"equals": number}
-        }
-    }
-    res = requests.post(query_url, headers=headers_notion, json=payload)
-    if res.ok:
-        results = res.json().get("results", [])
-        if results:
-            return results[0]["id"]
-    return None
+    existing_numbers = []
+    start_cursor = None
 
+    while True:
+        payload = {"page_size": 100}
+        if start_cursor:
+            payload["start_cursor"] = start_cursor
+
+        res = requests.post(query_url, headers=headers_notion, json=payload)
+        if not res.ok:
+            print("Failed to query Notion:", res.text)
+            break
+
+        data = res.json()
+        for result in data.get("results", []):
+            props = result.get("properties", {})
+            number = props.get("Github Number", {}).get("number")
+            if number is not None:
+                existing_numbers.append(number)
+
+        if not data.get("has_more"):
+            break
+        start_cursor = data.get("next_cursor")
+
+    return existing_numbers
+
+# GitHubからOpen Issueのみ取得
+def fetch_open_github_issues() -> List[Dict[str, Any]]:
+    headers_github = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github+json"
+    }
+    page = 1
+    per_page = 100
+    issues = []
+
+    while True:
+        url = f"https://api.github.com/repos/{github_repo}/issues?state=open&per_page={per_page}&page={page}"
+        res = requests.get(url, headers=headers_github)
+        if not res.ok:
+            print("GitHub API error:", res.text)
+            break
+
+        page_issues = res.json()
+        if not page_issues:
+            break
+
+        issues.extend([i for i in page_issues if "pull_request" not in i])
+        page += 1
+
+    return issues
+
+# Notionページの作成・更新
 def build_payload(issue: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "parent": {"database_id": database_id},
@@ -62,34 +103,41 @@ def update_page(page_id: str, issue: Dict[str, Any]):
     res = requests.patch(f"{NOTION_URL}/pages/{page_id}", headers=headers_notion, json=payload)
     print(f"[UPDATE] Issue #{issue['number']} → {res.status_code}")
 
-def sync_issue(issue: Dict[str, Any]):
-    page_id = search_notion_issue(issue["number"])
-    if page_id:
-        update_page(page_id, issue)
-    else:
-        create_page(issue)
-
-def bulk_sync_all_issues():
-    headers_github = {
-        "Authorization": f"Bearer {github_token}",
-        "Accept": "application/vnd.github+json"
+def search_notion_issue(number: int) -> Optional[str]:
+    """GitHub番号でNotion内のページを検索し、存在すればページIDを返す"""
+    query_url = f"{NOTION_URL}/databases/{database_id}/query"
+    payload = {
+        "filter": {
+            "property": "Github Number",
+            "number": {"equals": number}
+        }
     }
-    issues_url = f"https://api.github.com/repos/{github_repo}/issues?state=all"
-    res = requests.get(issues_url, headers=headers_github)
-    if not res.ok:
-        print("Failed to fetch GitHub issues:", res.text)
-        return
+    res = requests.post(query_url, headers=headers_notion, json=payload)
+    if res.ok:
+        results = res.json().get("results", [])
+        if results:
+            return results[0]["id"]
+    return None
 
-    issues = res.json()
-    for issue in issues:
-        if "pull_request" in issue:
-            continue  # Skip PRs
-        sync_issue(issue)
+# メイン同期処理
+def sync_issues():
+    github_issues = fetch_open_github_issues()
+    existing_numbers = get_existing_github_numbers()
 
+    if not existing_numbers:
+        print("Notion DB is empty. Performing bulk insert...")
+        for issue in github_issues:
+            create_page(issue)
+    else:
+        print("Notion DB already has issues. Syncing updates...")
+        for issue in github_issues:
+            if issue["number"] in existing_numbers:
+                page_id = search_notion_issue(issue["number"])
+                if page_id:
+                    update_page(page_id, issue)
+            else:
+                create_page(issue)
+
+# 実行
 if __name__ == "__main__":
-    issue_context = os.environ.get("ISSUE_CONTEXT")
-    bulk_sync_all_issues()
-    # if issue_context:
-    #     issue = json.loads(issue_context)
-    #     sync_issue(issue)
-    # else:
+    sync_issues()
